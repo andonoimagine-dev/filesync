@@ -179,6 +179,7 @@ select{padding:7px 10px;border-radius:8px;border:0.5px solid rgba(0,0,0,.22);bac
     <span class="apipill" id="apiPill">memuat...</span>
   </div>
   <div style="display:flex;gap:7px;flex-wrap:wrap">
+    <button class="btn btn-success" onclick="togglePull()"><i class="ti ti-device-mobile-down" aria-hidden="true"></i> Tarik dari HP</button>
     <button class="btn" onclick="toggleGuide()"><i class="ti ti-info-circle" aria-hidden="true"></i> Cara pakai Android</button>
     <button class="btn" onclick="toggleSettings()"><i class="ti ti-settings" aria-hidden="true"></i> Pengaturan</button>
     <button class="btn" onclick="toggleHistory()"><i class="ti ti-history" aria-hidden="true"></i> Riwayat</button>
@@ -196,6 +197,41 @@ select{padding:7px 10px;border-radius:8px;border:0.5px solid rgba(0,0,0,.22);bac
     </span>
   </div>
   <div class="profile-cards" id="profileCards"></div>
+</div>
+
+<!-- ===== TARIK DARI HP (HTTP File Server) ===== -->
+<div id="pullWrap" class="guide-wrap" style="display:none">
+  <div class="guide-title"><i class="ti ti-device-mobile-down" style="color:#3B6D11" aria-hidden="true"></i> Tarik file dari HP (HTTP File Server)</div>
+  <div style="display:grid;grid-template-columns:2fr 1fr auto;gap:10px;align-items:end;margin-bottom:10px">
+    <label style="font-size:12px;color:#666">Alamat server HP (dari aplikasi HTTP File Server)
+      <input class="fsi" id="pullUrl" placeholder="http://192.168.137.192:8080/files/" value="">
+    </label>
+    <label style="font-size:12px;color:#666">Filter folder (opsional, pisah koma)
+      <input class="fsi" id="pullFilter" placeholder="DCIM, Download, WhatsApp">
+    </label>
+    <button class="btn btn-info" id="btnPullTest" onclick="pullTest()"><i class="ti ti-plug-connected" aria-hidden="true"></i> Test koneksi</button>
+  </div>
+  <div id="pullStatus" style="display:none" class="notif"></div>
+  <div id="pullDirect" style="display:none">
+    <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+      <button class="btn btn-primary" id="btnPullStart" onclick="pullStart()"><i class="ti ti-download" aria-hidden="true"></i> Mulai tarik ke folder tujuan</button>
+      <button class="btn btn-danger" id="btnPullCancel" onclick="S.pullCancel=true" style="display:none"><i class="ti ti-player-stop" aria-hidden="true"></i> Batalkan</button>
+      <span style="font-size:12px;color:#888">File akan disimpan ke folder <strong>Tujuan</strong> di panel kanan</span>
+    </div>
+    <div class="pbb2" style="height:10px"><div class="pbf2" id="pullBar" style="width:0%"></div></div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:#999;margin:4px 0 8px">
+      <span id="pullFile">-</span><span id="pullStat">0 file • 0 B</span>
+    </div>
+    <div class="lb" id="pullLog" style="max-height:110px"></div>
+  </div>
+  <div id="pullFallback" style="display:none">
+    <div class="notif notif-warn" style="margin-bottom:10px">
+      <i class="ti ti-shield-x" aria-hidden="true"></i>
+      <div><strong>Akses langsung diblokir browser (CORS)</strong> — aplikasi server di HP tidak mengizinkan halaman web lain mengambil filenya. Solusi: gunakan script PowerShell di bawah. Pengaturan Anda sudah terisi otomatis — tinggal download dan jalankan.</div>
+    </div>
+    <button class="btn btn-success" onclick="pullGenScript()"><i class="ti ti-file-download" aria-hidden="true"></i> Download script PowerShell (siap pakai)</button>
+    <span style="font-size:11px;color:#999;margin-left:8px">Klik kanan file .ps1 → Run with PowerShell</span>
+  </div>
 </div>
 
 <!-- Android Guide -->
@@ -1035,6 +1071,165 @@ function flipDir(){
 function toggleSettings(){const p=document.getElementById('settingsPanel');p.style.display=p.style.display==='none'?'block':'none';}
 function toggleHistory(){const p=document.getElementById('histWrap');p.style.display=p.style.display==='none'?'block':'none';renderHistory();}
 function toggleGuide(){const p=document.getElementById('guideWrap');p.style.display=p.style.display==='none'?'block':'none';}
+
+/* ============ TARIK DARI HP (HTTP File Server) ============ */
+function togglePull(){const p=document.getElementById('pullWrap');p.style.display=p.style.display==='none'?'block':'none';}
+function pullStatusMsg(html,type){
+  const el=document.getElementById('pullStatus');
+  el.className='notif '+(type==='ok'?'notif-warn':'notif-warn');
+  el.style.display='flex';
+  el.style.background=type==='ok'?'#EAF3DE':type==='err'?'#FCEBEB':'#FAEEDA';
+  el.style.color=type==='ok'?'#27500A':type==='err'?'#7A1F1F':'#633806';
+  el.style.borderColor=type==='ok'?'#C0DD97':type==='err'?'#F7C1C1':'#FAC775';
+  el.innerHTML='<i class="ti ti-'+(type==='ok'?'circle-check':type==='err'?'alert-circle':'info-circle')+'" aria-hidden="true"></i><div>'+html+'</div>';
+}
+function pullNormUrl(){
+  let u=(document.getElementById('pullUrl').value||'').trim();
+  if(!u)return null;
+  if(!/^https?:\/\//i.test(u))u='http://'+u;
+  if(!u.endsWith('/'))u+='/';
+  return u;
+}
+async function pullTest(){
+  const u=pullNormUrl();
+  if(!u){pullStatusMsg('Masukkan alamat server dulu, contoh: http://192.168.137.192:8080/files/','err');return;}
+  pullStatusMsg('Menguji koneksi langsung ke '+u+' ...','info');
+  document.getElementById('pullDirect').style.display='none';
+  document.getElementById('pullFallback').style.display='none';
+  try{
+    const ctrl=new AbortController();
+    const t=setTimeout(()=>ctrl.abort(),8000);
+    const resp=await fetch(u,{signal:ctrl.signal});
+    clearTimeout(t);
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
+    await resp.text();
+    /* fetch berhasil = server kirim CORS header (atau same-origin) */
+    pullStatusMsg('<strong>Berhasil!</strong> Server HP mengizinkan akses langsung — download bisa dilakukan dari browser tanpa script. Pastikan folder <strong>Tujuan</strong> sudah dipilih di panel kanan, lalu klik "Mulai tarik".','ok');
+    document.getElementById('pullDirect').style.display='block';
+  }catch(e){
+    /* CORS block / timeout / jaringan */
+    pullStatusMsg('Akses langsung gagal: '+(e.name==='AbortError'?'timeout — cek server jalan & jaringan sama':e.message)+'. Kemungkinan besar diblokir kebijakan CORS browser.','err');
+    document.getElementById('pullFallback').style.display='block';
+  }
+}
+async function pullStart(){
+  const u=pullNormUrl();
+  if(!S.R.handle){alert('Pilih folder Tujuan dulu di panel kanan — file dari HP akan disimpan ke sana.');return;}
+  const filterRaw=(document.getElementById('pullFilter').value||'').trim();
+  const filters=filterRaw?filterRaw.split(',').map(x=>x.trim().toLowerCase()).filter(Boolean):[];
+  S.pullCancel=false;
+  document.getElementById('btnPullStart').style.display='none';
+  document.getElementById('btnPullCancel').style.display='inline-flex';
+  const logEl=document.getElementById('pullLog');logEl.innerHTML='';
+  function plog(m,c){const d=document.createElement('div');d.className='ll '+(c||'');d.textContent=m;logEl.appendChild(d);if(logEl.children.length>200)logEl.removeChild(logEl.firstChild);logEl.scrollTop=logEl.scrollHeight;}
+  let nDone=0,nSkip=0,nFail=0,bytes=0;const fails=[];
+  const t0=performance.now();
+
+  async function listDir(url){
+    const resp=await fetch(url);
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
+    const html=await resp.text();
+    const out=[];
+    const re=/href="([^"]+)"/g;let m;
+    while((m=re.exec(html))!==null){
+      const href=m[1];
+      if(['../','..','/','#'].includes(href))continue;
+      if(/^https?:/i.test(href)&&!href.startsWith(u))continue;
+      out.push(href);
+    }
+    return out;
+  }
+  async function walk(url,relPath,depth){
+    if(S.pullCancel)return;
+    let items;
+    try{items=await listDir(url);}catch(e){plog('✕ Gagal list: '+relPath+' — '+e.message,'ler');nFail++;fails.push(relPath);return;}
+    for(const item of items){
+      if(S.pullCancel)return;
+      const isDir=item.endsWith('/');
+      const name=decodeURIComponent(item.replace(/\/+$/,'').split('/').pop());
+      const itemUrl=/^https?:/i.test(item)?item:url.replace(/\/+$/,'')+'/'+item;
+      const rel=relPath?relPath+'/'+name:name;
+      if(isDir){
+        if(depth===0&&filters.length&&!filters.includes(name.toLowerCase()))continue;
+        await walk(itemUrl,rel,depth+1);
+      }else{
+        document.getElementById('pullFile').textContent=rel;
+        try{
+          /* cek sudah ada di tujuan? */
+          const parts=rel.split('/');const fname=parts.pop();
+          let dirH=S.R.handle;
+          for(const p of parts){if(p)dirH=await dirH.getDirectoryHandle(p,{create:true});}
+          let exists=false;
+          try{await dirH.getFileHandle(fname);exists=true;}catch{}
+          if(exists){nSkip++;plog('= Lewati (sudah ada): '+rel,'lsk');}
+          else{
+            const resp=await fetch(itemUrl);
+            if(!resp.ok)throw new Error('HTTP '+resp.status);
+            const buf=await resp.arrayBuffer();
+            const fh=await dirH.getFileHandle(fname,{create:true});
+            const wr=await fh.createWritable();
+            await wr.write(buf);await wr.close();
+            nDone++;bytes+=buf.byteLength;
+            plog('+ '+rel+' ('+fmt(buf.byteLength)+')','lok');
+          }
+        }catch(e){nFail++;fails.push(rel);plog('✕ SKIP (gagal): '+rel+' — '+e.message,'ler');}
+      }
+      const el=(performance.now()-t0)/1000;
+      document.getElementById('pullStat').textContent=nDone+' disalin • '+nSkip+' dilewati • '+(nFail?nFail+' gagal • ':'')+fmt(bytes)+' @ '+fmtSpeed(el>0?bytes/el:0);
+      const totalSoFar=nDone+nSkip+nFail;
+      document.getElementById('pullBar').style.width=Math.min(99,totalSoFar%100+((depth*7)%30))+'%';
+    }
+  }
+  try{await walk(u,'',0);}catch(e){plog('✕ '+e.message,'ler');}
+  document.getElementById('pullBar').style.width='100%';
+  const dur=(performance.now()-t0)/1000;
+  plog((S.pullCancel?'[DIBATALKAN] ':'[SELESAI] ')+nDone+' disalin, '+nSkip+' dilewati, '+nFail+' gagal • '+fmt(bytes)+' • '+fmtTime(dur),'lok');
+  if(fails.length)plog('Gagal: '+fails.join(', '),'ler');
+  document.getElementById('pullFile').textContent=S.pullCancel?'Dibatalkan':'Selesai — refresh folder Tujuan untuk lihat hasil (klik ulang Pilih folder atau profil)';
+  document.getElementById('btnPullStart').style.display='inline-flex';
+  document.getElementById('btnPullCancel').style.display='none';
+}
+function pullGenScript(){
+  const u=pullNormUrl()||'http://192.168.137.192:8080/files/';
+  const filterRaw=(document.getElementById('pullFilter').value||'').trim();
+  const filters=filterRaw?filterRaw.split(',').map(x=>x.trim()).filter(Boolean):[];
+  const filterPs=filters.length?'@("'+filters.join('", "')+'")':'@()';
+  const target=S.R.path?('D:\\\\'+S.R.path):'D:\\\\AndroidBackup';
+  const ps=[
+'# TarikDariHP.ps1 — generated by FolderSync v2.3',
+'$ServerUrl  = "'+u+'"',
+'$TargetDir  = "'+target.replace(/\\\\/g,'\\')+'"',
+'$OnlyFolders = '+filterPs,
+'',
+'$ErrorActionPreference = "Continue"',
+'$script:N=0;$script:D=0;$script:S=0;$script:F=0;$script:B=0;$script:FL=@();$t0=Get-Date',
+'function FS($b){if($b -lt 1KB){return "$b B"};if($b -lt 1MB){return "{0:N1} KB" -f ($b/1KB)};if($b -lt 1GB){return "{0:N1} MB" -f ($b/1MB)};return "{0:N2} GB" -f ($b/1GB)}',
+'function GL($u){try{$r=Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 30;$l=@();foreach($m in ([regex]\'href="([^"]+)"\').Matches($r.Content)){$h=$m.Groups[1].Value;if($h -in @("../","..","/","#")){continue};if($h.StartsWith("http") -and -not $h.StartsWith($ServerUrl)){continue};$l+=$h};return $l}catch{Write-Host "  [GAGAL LIST] $u" -ForegroundColor Red;return @()}}',
+'function SF($u,$lp,$rp){',
+'  if(-not(Test-Path $lp)){New-Item -ItemType Directory -Path $lp -Force|Out-Null}',
+'  foreach($i in (GL $u)){',
+'    $n=[System.Uri]::UnescapeDataString($i.TrimEnd("/"));$d=$i.EndsWith("/")',
+'    $iu=if($i.StartsWith("http")){$i}else{$u.TrimEnd("/")+"/"+$i}',
+'    if($d){if($rp -eq "" -and $OnlyFolders.Count -gt 0 -and ($OnlyFolders -notcontains $n)){continue};SF $iu (Join-Path $lp $n) "$rp/$n"}',
+'    else{$script:N++;$lf=Join-Path $lp $n;$ds="$rp/$n".TrimStart("/")',
+'      if(Test-Path $lf){$script:S++;Write-Host "  = Lewati: $ds" -ForegroundColor DarkGray;continue}',
+'      try{Invoke-WebRequest -Uri $iu -OutFile $lf -UseBasicParsing -TimeoutSec 300;$sz=(Get-Item $lf).Length;$script:D++;$script:B+=$sz;Write-Host "  + $ds ($(FS $sz))" -ForegroundColor Green}',
+'      catch{$script:F++;$script:FL+="$ds";Write-Host "  X GAGAL: $ds" -ForegroundColor Red;if(Test-Path $lf){Remove-Item $lf -Force}}}}}',
+'Write-Host "Sumber: $ServerUrl`nTujuan: $TargetDir" -ForegroundColor Cyan',
+'try{Invoke-WebRequest -Uri $ServerUrl -UseBasicParsing -TimeoutSec 10|Out-Null;Write-Host "[OK] Server terjangkau" -ForegroundColor Green}catch{Write-Host "[ERROR] Tidak bisa konek. Cek server HP & jaringan." -ForegroundColor Red;Read-Host "Enter untuk keluar";exit 1}',
+'SF $ServerUrl $TargetDir ""',
+'$dur=(Get-Date)-$t0',
+'Write-Host "`nSELESAI $($dur.ToString(\'hh\\:mm\\:ss\')) | $script:D disalin ($(FS $script:B)) | $script:S dilewati | $script:F gagal" -ForegroundColor Cyan',
+'if($script:FL.Count){$script:FL|ForEach-Object{Write-Host "  X $_" -ForegroundColor Red}}',
+'Write-Host "Lanjutkan di FolderSync: pilih $TargetDir sebagai Sumber" -ForegroundColor Cyan',
+'Read-Host "Enter untuk keluar"'
+  ].join('\r\n');
+  const blob=new Blob([ps],{type:'text/plain;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='TarikDariHP.ps1';
+  a.click();
+}
 </script>
 </body>
 </html>
