@@ -245,6 +245,10 @@ select{padding:7px 10px;border-radius:8px;border:0.5px solid rgba(0,0,0,.22);bac
       <input class="fsi" id="pullIgnExt" value=".tmp .chk .nomedia .dat">
     </label>
   </div>
+  <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:#555;cursor:pointer;margin-bottom:10px">
+    <input type="checkbox" id="pullSizeCheck" style="accent-color:#185FA5">
+    <span><strong>Periksa ukuran file — timpa jika berbeda</strong> <span style="color:#999">(deteksi file yang berubah isi; sedikit lebih lambat. Tanpa centang: file dengan nama sama selalu dilewati)</span></span>
+  </label>
 
   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
     <button class="btn btn-info" id="btnPullTest" onclick="pullTest()"><i class="ti ti-plug-connected" aria-hidden="true"></i> Test koneksi</button>
@@ -1212,6 +1216,7 @@ function pullGenOneClick(){
 '$TargetDir="'+target+'"',
 '$OnlyFolders='+filterPs,
 '$IgnExt='+ignPs,
+'$SizeCheck=$'+(document.getElementById('pullSizeCheck').checked?'true':'false'),
 '$FtpUser="'+ftpUser.replace(/"/g,'')+'"',
 '$FtpPass="'+ftpPass.replace(/"/g,'')+'"',
 '$ErrorActionPreference="Continue"',
@@ -1245,8 +1250,18 @@ function pullGenOneClick(){
 '      if($IgnExt.Count -gt 0 -and ($IgnExt -contains $ext)){continue}',
 '      if($n -eq "_synclog.txt"){continue}',
 '      $script:N++;$lf=Join-Path $lp $n;$ds="$rp/$n".TrimStart("/")',
-'      if(Test-Path $lf){$script:S++;Write-Host "  = Lewati: $ds" -ForegroundColor DarkGray;if($script:S % 50 -eq 0){WStat}continue}',
-'      try{Invoke-WebRequest -Uri $iu -OutFile $lf -UseBasicParsing -TimeoutSec 300;$sz=(Get-Item $lf).Length;$script:D++;$script:B+=$sz;WLog "  + $ds ($(FmtSz $sz))" Green;WStat}',
+'      $skip=$false',
+'      if(Test-Path $lf){',
+'        if(-not $SizeCheck){$skip=$true}',
+'        else{',
+'          $remoteSz=-1',
+'          try{$hr=Invoke-WebRequest -Uri $iu -Method Head -UseBasicParsing -TimeoutSec 20;$remoteSz=[long]$hr.Headers["Content-Length"]}catch{}',
+'          if($remoteSz -ge 0 -and $remoteSz -eq (Get-Item $lf).Length){$skip=$true}',
+'          elseif($remoteSz -lt 0){$skip=$true}',
+'        }}',
+'      if($skip){$script:S++;Write-Host "  = Lewati: $ds" -ForegroundColor DarkGray;if($script:S % 50 -eq 0){WStat}continue}',
+'      $isUpd=Test-Path $lf',
+'      try{Invoke-WebRequest -Uri $iu -OutFile $lf -UseBasicParsing -TimeoutSec 300;$sz=(Get-Item $lf).Length;$script:D++;$script:B+=$sz;WLog $(if($isUpd){"  ^ Ditimpa (ukuran beda): $ds ($(FmtSz $sz))"}else{"  + $ds ($(FmtSz $sz))"}) Green;WStat}',
 '      catch{$script:F++;$script:FL+="$ds";WLog "  X GAGAL (skip): $ds" Red;if(Test-Path $lf){Remove-Item $lf -Force};WStat}}}}',
 'try{Invoke-WebRequest -Uri $ServerUrl -UseBasicParsing -TimeoutSec 10|Out-Null;WLog "[OK] Server terjangkau" Green}catch{WLog "[ERROR] Tidak bisa konek ke $ServerUrl. Cek server HP dan jaringan." Red;Read-Host "Enter untuk keluar";exit 1}'
   ];
@@ -1274,6 +1289,8 @@ function pullGenOneClick(){
 '    }',
 '    $sr.Close();$rs.Close();return $out',
 '  }catch{WLog "  [GAGAL LIST] $u : $($_.Exception.Message)" Red;return @()}}',
+'function FtpSize($u){',
+'  try{$rq=FtpReq $u ([System.Net.WebRequestMethods+Ftp]::GetFileSize);$rs=$rq.GetResponse();$sz=$rs.ContentLength;$rs.Close();return $sz}catch{return -1}}',
 'function FtpGet($u,$lf){',
 '  $rq=FtpReq $u ([System.Net.WebRequestMethods+Ftp]::DownloadFile);$rq.Timeout=300000',
 '  $rs=$rq.GetResponse();$is=$rs.GetResponseStream()',
@@ -1291,8 +1308,17 @@ function pullGenOneClick(){
 '      if($IgnExt.Count -gt 0 -and ($IgnExt -contains $ext)){continue}',
 '      if($n -eq "_synclog.txt"){continue}',
 '      $script:N++;$lf=Join-Path $lp $n;$ds="$rp/$n".TrimStart("/")',
-'      if(Test-Path $lf){$script:S++;Write-Host "  = Lewati: $ds" -ForegroundColor DarkGray;if($script:S % 50 -eq 0){WStat}continue}',
-'      try{FtpGet $iu $lf;$sz=(Get-Item $lf).Length;$script:D++;$script:B+=$sz;WLog "  + $ds ($(FmtSz $sz))" Green;WStat}',
+'      $skip=$false',
+'      if(Test-Path $lf){',
+'        if(-not $SizeCheck){$skip=$true}',
+'        else{',
+'          $remoteSz=FtpSize $iu',
+'          if($remoteSz -ge 0 -and $remoteSz -eq (Get-Item $lf).Length){$skip=$true}',
+'          elseif($remoteSz -lt 0){$skip=$true}',
+'        }}',
+'      if($skip){$script:S++;Write-Host "  = Lewati: $ds" -ForegroundColor DarkGray;if($script:S % 50 -eq 0){WStat}continue}',
+'      $isUpd=Test-Path $lf',
+'      try{FtpGet $iu $lf;$sz=(Get-Item $lf).Length;$script:D++;$script:B+=$sz;WLog $(if($isUpd){"  ^ Ditimpa (ukuran beda): $ds ($(FmtSz $sz))"}else{"  + $ds ($(FmtSz $sz))"}) Green;WStat}',
 '      catch{$script:F++;$script:FL+="$ds";WLog "  X GAGAL (skip): $ds" Red;if(Test-Path $lf){Remove-Item $lf -Force};WStat}}}}',
 'try{$t=FtpReq $ServerUrl ([System.Net.WebRequestMethods+Ftp]::ListDirectory);$t.GetResponse().Close();WLog "[OK] Server FTP terjangkau" Green}catch{WLog "[ERROR] Tidak bisa konek FTP ke $ServerUrl : $($_.Exception.Message). Cek alamat, port, user/password, dan server jalan." Red;Read-Host "Enter untuk keluar";exit 1}'
   ];
@@ -1345,7 +1371,7 @@ async function pullMonitor(){
       const logEl=document.getElementById('monLog');
       const shown=linesArr.filter(l=>!l.startsWith('STATUS|')).slice(-80);
       logEl.innerHTML=shown.map(l=>{
-        const cls=l.startsWith('  +')?'lok':l.startsWith('  X')||l.startsWith('[ERROR')?'ler':l.startsWith('[SELESAI')||l.startsWith('[OK')?'lok':'lsk';
+        const cls=l.startsWith('  +')?'lok':l.startsWith('  ^')?'lwn':l.startsWith('  X')||l.startsWith('[ERROR')?'ler':l.startsWith('[SELESAI')||l.startsWith('[OK')?'lok':'lsk';
         return '<div class="ll '+cls+'">'+escapeHtml(l)+'</div>';
       }).join('');
       logEl.scrollTop=logEl.scrollHeight;
