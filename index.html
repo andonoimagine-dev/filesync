@@ -227,10 +227,26 @@ select{padding:7px 10px;border-radius:8px;border:0.5px solid rgba(0,0,0,.22);bac
   <div id="pullFallback" style="display:none">
     <div class="notif notif-warn" style="margin-bottom:10px">
       <i class="ti ti-shield-x" aria-hidden="true"></i>
-      <div><strong>Akses langsung diblokir browser (CORS)</strong> — aplikasi server di HP tidak mengizinkan halaman web lain mengambil filenya. Solusi: gunakan script PowerShell di bawah. Pengaturan Anda sudah terisi otomatis — tinggal download dan jalankan.</div>
+      <div><strong>Akses langsung diblokir browser (CORS)</strong> — aplikasi server di HP tidak mengizinkan halaman web lain mengambil filenya. Gunakan script di bawah — pengaturan Anda sudah terisi otomatis.</div>
     </div>
-    <button class="btn btn-success" onclick="pullGenScript()"><i class="ti ti-file-download" aria-hidden="true"></i> Download script PowerShell (siap pakai)</button>
-    <span style="font-size:11px;color:#999;margin-left:8px">Klik kanan file .ps1 → Run with PowerShell</span>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn btn-success" onclick="pullGenScript()"><i class="ti ti-file-download" aria-hidden="true"></i> Download script (.ps1)</button>
+      <button class="btn btn-info" onclick="pullGenBat()"><i class="ti ti-player-play" aria-hidden="true"></i> Download launcher (.bat)</button>
+    </div>
+    <div class="guide-steps">
+      <div class="guide-step"><div class="step-num">1</div>
+        <div class="step-body"><strong>Cara termudah — pakai launcher .bat</strong>
+        Download <strong>kedua file</strong> di atas, simpan di folder yang sama (misal Downloads). Lalu cukup <strong>double-click <code>JalankanSync.bat</code></strong> — tidak perlu setting apapun, jalan di PC manapun. Cocok juga disimpan di flashdisk.</div></div>
+      <div class="guide-step"><div class="step-num">2</div>
+        <div class="step-body"><strong>Alternatif — jalankan .ps1 manual</strong>
+        Buka PowerShell → <code>cd $env:USERPROFILE\Downloads</code> → <code>Unblock-File .\TarikDariHP.ps1</code> → <code>.\TarikDariHP.ps1</code>. Jika ditolak "running scripts is disabled", jalankan dulu sekali: <code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code></div></div>
+      <div class="guide-step"><div class="step-num">3</div>
+        <div class="step-body"><strong>Jika pindah ke PC lain</strong>
+        Penanda "dari internet" & execution policy berlaku per-komputer. Dengan launcher .bat semua itu dilewati otomatis — itulah kenapa cara #1 paling direkomendasikan. Tanpa .bat, ulangi langkah #2 di PC baru.</div></div>
+      <div class="guide-step"><div class="step-num">4</div>
+        <div class="step-body"><strong>Setelah selesai</strong>
+        File dari HP masuk ke folder tujuan (default <code>D:\AndroidBackup</code>). Lanjutkan di aplikasi ini: pilih folder itu sebagai <strong>Sumber</strong> → Bandingkan → Sync ke backup permanen. Jalankan ulang script kapanpun — file yang sudah ada dilewati otomatis (incremental).</div></div>
+    </div>
   </div>
 </div>
 
@@ -1228,6 +1244,21 @@ function pullGenScript(){
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
   a.download='TarikDariHP.ps1';
+  a.click();
+}
+function pullGenBat(){
+  const bat=[
+'@echo off',
+'REM JalankanSync.bat — launcher untuk TarikDariHP.ps1',
+'REM Simpan file ini di folder yang sama dengan TarikDariHP.ps1',
+'REM Double-click untuk menjalankan — tanpa perlu Unblock-File / Set-ExecutionPolicy',
+'powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0TarikDariHP.ps1"',
+'if errorlevel 1 pause'
+  ].join('\r\n');
+  const blob=new Blob([bat],{type:'text/plain;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='JalankanSync.bat';
   a.click();
 }
 </script>
