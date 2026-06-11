@@ -213,18 +213,29 @@ select{padding:7px 10px;border-radius:8px;border:0.5px solid rgba(0,0,0,.22);bac
     <label style="font-size:12px;color:#666">2. Alamat server HP
       <input class="fsi" id="pullUrl" placeholder="http://192.168.137.192:8080/files/">
     </label>
-    <label style="font-size:12px;color:#666">3. Folder tujuan di PC — bebas pilih path manapun
-      <input class="fsi" id="pullTarget" value="D:\\AndroidBackup">
+    <label style="font-size:12px;color:#666">3. Folder tujuan di PC
+      <input class="fsi" id="pullTarget" value="D:\AndroidBackup">
+      <span style="display:flex;align-items:center;gap:6px;margin-top:5px;cursor:pointer;font-size:11px;color:#555" onclick="event.preventDefault();const c=document.getElementById('pullAskDir');c.checked=!c.checked">
+        <input type="checkbox" id="pullAskDir" checked style="accent-color:#185FA5;pointer-events:none">
+        <strong>Pilih folder via dialog Explorer saat .bat dijalankan</strong>
+      </span>
     </label>
   </div>
-  <div id="pullFtpCred" style="display:none;margin-bottom:8px" class="sg">
-    <label style="font-size:12px;color:#666">Username FTP (kosongkan jika anonymous)
-      <input class="fsi" id="pullUser" placeholder="android">
+  <div id="pullFtpCred" style="display:none;margin-bottom:8px">
+    <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:#555;cursor:pointer;margin-bottom:8px">
+      <input type="checkbox" id="pullAnon" checked style="accent-color:#185FA5" onchange="pullAnonChange()">
+      <strong>Login anonymous</strong> (tanpa username/password — default FTP Xiaomi File Manager)
     </label>
-    <label style="font-size:12px;color:#666">Password FTP
-      <input class="fsi" id="pullPass" type="password" placeholder="">
-    </label>
-    <div style="font-size:11px;color:#999;align-self:end;padding-bottom:6px">Xiaomi File Manager: menu ⋮ → FTP → alamat tampil misal <code>ftp://192.168.1.5:2121</code></div>
+    <div id="pullCredFields" class="sg" style="display:none">
+      <label style="font-size:12px;color:#666">Username FTP
+        <input class="fsi" id="pullUser" placeholder="android" autocomplete="off" name="fs_ftp_u_x9">
+      </label>
+      <label style="font-size:12px;color:#666">Password FTP
+        <input class="fsi" id="pullPass" type="password" placeholder="" autocomplete="new-password" name="fs_ftp_p_x9">
+      </label>
+      <div style="font-size:11px;color:#999;align-self:end;padding-bottom:6px">Isi sesuai pengaturan "Manage account" di FTP Xiaomi (jika diaktifkan)</div>
+    </div>
+    <div style="font-size:11px;color:#999">Xiaomi File Manager: menu ⋮ → FTP → Start → alamat tampil misal <code>ftp://192.168.1.5:2121</code></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
     <label style="font-size:12px;color:#666">4. Filter folder (opsional, pisah koma — kosong = semua)
@@ -1141,6 +1152,11 @@ function pullProtoChange(){
   if(p==='ftp')pullStatusMsg('Mode FTP: test koneksi & tarik langsung dari browser tidak tersedia (browser modern tidak mendukung protokol ftp://). Langsung gunakan <strong>Download SyncHP.bat</strong> — engine FTP sudah tertanam.','info');
   else document.getElementById('pullStatus').style.display='none';
 }
+function pullAnonChange(){
+  const anon=document.getElementById('pullAnon').checked;
+  document.getElementById('pullCredFields').style.display=anon?'none':'grid';
+  if(anon){document.getElementById('pullUser').value='';document.getElementById('pullPass').value='';}
+}
 function pullNormUrl(){
   let u=(document.getElementById('pullUrl').value||'').trim();
   if(!u)return null;
@@ -1176,8 +1192,9 @@ function pullGenOneClick(){
   const proto=document.getElementById('pullProto').value;
   const u=pullNormUrl()||(proto==='ftp'?'ftp://192.168.1.5:2121/':'http://192.168.137.192:8080/files/');
   const target=(document.getElementById('pullTarget').value||'D:\\AndroidBackup').trim();
-  const ftpUser=(document.getElementById('pullUser').value||'').trim();
-  const ftpPass=(document.getElementById('pullPass').value||'');
+  const anon=document.getElementById('pullAnon').checked;
+  const ftpUser=anon?'':(document.getElementById('pullUser').value||'').trim();
+  const ftpPass=anon?'':(document.getElementById('pullPass').value||'');
   const filterRaw=(document.getElementById('pullFilter').value||'').trim();
   const filters=filterRaw?filterRaw.split(',').map(x=>x.trim()).filter(Boolean):[];
   const filterPs=filters.length?'@("'+filters.join('", "')+'")':'@()';
@@ -1192,12 +1209,20 @@ function pullGenOneClick(){
 'exit /b',
 '#PSBEGIN',
 '$ServerUrl="'+u+'"',
-'$TargetDir="'+target.replace(/\\/g,'\\\\')+'"',
+'$TargetDir="'+target+'"',
 '$OnlyFolders='+filterPs,
 '$IgnExt='+ignPs,
 '$FtpUser="'+ftpUser.replace(/"/g,'')+'"',
 '$FtpPass="'+ftpPass.replace(/"/g,'')+'"',
 '$ErrorActionPreference="Continue"',
+...(document.getElementById('pullAskDir').checked?[
+'Add-Type -AssemblyName System.Windows.Forms',
+'$dlg=New-Object System.Windows.Forms.FolderBrowserDialog',
+'$dlg.Description="Pilih folder tujuan backup dari HP"',
+'$dlg.SelectedPath=$TargetDir',
+'$dlg.ShowNewFolderButton=$true',
+'if($dlg.ShowDialog() -eq "OK"){$TargetDir=$dlg.SelectedPath}else{Write-Host "Dibatalkan." -ForegroundColor Yellow;exit}'
+]:[]),
 'if(-not(Test-Path $TargetDir)){New-Item -ItemType Directory -Path $TargetDir -Force|Out-Null}',
 '$LogF=Join-Path $TargetDir "_synclog.txt"',
 'Set-Content $LogF "[MULAI] $(Get-Date -Format \'yyyy-MM-dd HH:mm:ss\') | $ServerUrl -> $TargetDir" -Encoding UTF8',
