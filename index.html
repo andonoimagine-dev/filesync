@@ -203,22 +203,24 @@ select{padding:7px 10px;border-radius:8px;border:0.5px solid rgba(0,0,0,.22);bac
   <div class="guide-title"><i class="ti ti-device-mobile" style="color:#3B6D11" aria-hidden="true"></i> Cara backup Android ke PC via browser</div>
   <div class="notif notif-warn" style="margin-bottom:12px">
     <i class="ti ti-alert-triangle" aria-hidden="true"></i>
-    <div><strong>Mengapa Android via USB tidak terbaca?</strong><br>
-    Android via USB pakai protokol <strong>MTP</strong>, bukan filesystem biasa. Browser hanya bisa baca drive lokal/network drive yang sudah di-mount Windows.</div>
+    <div><strong>Yang TIDAK bisa dibaca aplikasi ini:</strong><br>
+    &bull; <strong>Android via USB (MTP)</strong> — bukan filesystem biasa, browser tidak bisa membacanya<br>
+    &bull; <strong>FTP via "Add a network location"</strong> — itu hanya tampilan khusus File Explorer, bukan drive sungguhan, sehingga tidak muncul di folder picker browser<br>
+    Yang BISA dibaca: drive lokal (C:, D:) dan <strong>network drive dengan huruf drive</strong> (hasil "Map network drive" via SMB, atau mount RaiDrive/rclone).</div>
   </div>
   <div class="guide-steps">
     <div class="guide-step"><div class="step-num">1</div>
-      <div class="step-body"><strong>Salin dulu via File Explorer</strong>
-      Salin folder Android ke folder sementara di PC misal <code>D:\Temp\AndroidBackup</code>, lalu pilih sebagai Sumber.</div></div>
+      <div class="step-body"><strong>SMB via WiFi — direkomendasikan ✓</strong>
+      Install <strong>LAN Drive</strong> (gratis) di Android → jalankan, catat alamat misal <code>\\192.168.1.5</code>. Di Windows: This PC → <strong>Map network drive</strong> → pilih huruf (misal Z:) → masukkan alamat. Drive <code>Z:</code> adalah drive sungguhan dan bisa dipilih di aplikasi ini. Setup sekali, selanjutnya tinggal konek WiFi yang sama.</div></div>
     <div class="guide-step"><div class="step-num">2</div>
-      <div class="step-body"><strong>FTP via WiFi</strong>
-      FTP Server di Android → Windows: This PC → <strong>Add a network location</strong> → <code>ftp://192.168.x.x:port</code>. Setelah mount bisa dipilih di sini.</div></div>
+      <div class="step-body"><strong>FTP + RaiDrive (jika tetap mau FTP)</strong>
+      FTP Server di Android tetap bisa dipakai, tapi di PC harus di-mount jadi huruf drive pakai <strong>RaiDrive</strong> (gratis) atau <strong>rclone mount</strong> — bukan "Add a network location". Setelah jadi drive Z:, baru terbaca di sini.</div></div>
     <div class="guide-step"><div class="step-num">3</div>
-      <div class="step-body"><strong>Cloud sync folder</strong>
-      Google Drive/OneDrive auto-sync dari Android, pilih folder sync lokal sebagai Sumber.</div></div>
+      <div class="step-body"><strong>Salin manual via File Explorer</strong>
+      Tanpa install apapun: sambungkan USB → File Explorer → salin folder Android ke folder lokal misal <code>D:\Temp\AndroidBackup</code> → pilih folder itu sebagai Sumber di sini.</div></div>
     <div class="guide-step"><div class="step-num">4</div>
-      <div class="step-body"><strong>Syncthing</strong>
-      Sync real-time dua arah Android↔PC via WiFi tanpa cloud.</div></div>
+      <div class="step-body"><strong>Cloud / Syncthing</strong>
+      Google Drive/OneDrive auto-upload dari Android lalu pilih folder sync lokal di PC sebagai Sumber. Atau <strong>Syncthing</strong> untuk sync dua arah via WiFi tanpa cloud — folder hasilnya dikelola aplikasi ini.</div></div>
   </div>
 </div>
 
