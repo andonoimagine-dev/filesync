@@ -288,6 +288,8 @@ input[type=checkbox]{accent-color:var(--acc);width:15px;height:15px}
     <button class="btn btn-info" id="btnPullTest" onclick="pullTest()"><i class="ti ti-plug-connected" aria-hidden="true"></i> Test koneksi</button>
     <button class="btn btn-success" onclick="pullGenOneClick()"><i class="ti ti-file-download" aria-hidden="true"></i> Download SyncHP.bat</button>
     <button class="btn btn-success" onclick="pullCopyBat()"><i class="ti ti-clipboard-copy" aria-hidden="true"></i> Salin ke clipboard (anti-blokir)</button>
+    <button class="btn btn-danger" onclick="pullGenClean(false)"><i class="ti ti-trash" aria-hidden="true"></i> Download CleanHP.bat (kosongkan HP yang sudah dibackup)</button>
+    <button class="btn btn-danger" onclick="pullGenClean(true)" style="border-style:dashed"><i class="ti ti-clipboard-copy" aria-hidden="true"></i> Salin CleanHP</button>
     <button class="btn btn-warn" id="btnMonitor" onclick="pullMonitor()"><i class="ti ti-activity" aria-hidden="true"></i> Monitor progres live</button>
     <span style="font-size:11px;color:#999">Klik download → klik file di bar download Chrome → jalan. Progres tampil via Monitor.</span>
   </div>
@@ -331,6 +333,9 @@ input[type=checkbox]{accent-color:var(--acc);width:15px;height:15px}
     <div class="guide-step"><div class="step-num">4</div>
       <div class="step-body"><strong>Lanjut sync permanen</strong>
       Setelah selesai, pilih folder hasil tarik sebagai <strong>Sumber</strong> di panel kiri → Bandingkan → Sync ke lokasi backup permanen.</div></div>
+    <div class="guide-step" style="border-color:var(--errLine)"><div class="step-num" style="background:var(--err)">!</div>
+      <div class="step-body"><strong>CleanHP — kosongkan ruang HP dengan aman</strong>
+      Hanya via <strong>FTP read-write</strong> (aktifkan di pengaturan FTP Xiaomi). Script membandingkan setiap file di HP dengan folder backup: file dihapus dari HP <u>hanya jika</u> ada di backup <u>dan ukurannya identik</u>. Selalu tampil preview + konfirmasi ketik <code>HAPUS</code> dulu. File beda ukuran / belum terbackup tidak akan pernah disentuh.</div></div>
   </div>
 </div>
 
@@ -1391,6 +1396,170 @@ async function pullCopyBat(){
     pullStatusMsg('<strong>Tersalin ke clipboard!</strong> Sekarang: buka <strong>Notepad</strong> → Ctrl+V (paste) → File → Save As → ketik nama: <code>"SyncHP.bat"</code> <u>lengkap dengan tanda kutipnya</u>, pilih Save as type: <strong>All Files</strong>, Encoding: <strong>UTF-8</strong> → Save di folder mana saja → double-click file tersebut. File buatan lokal bebas dari blokir keamanan internet Windows.','ok');
   }catch(e){
     pullStatusMsg('Gagal menyalin otomatis: '+e.message+'. Coba klik tombol sekali lagi, atau pastikan halaman dibuka via file:// atau https://.','err');
+  }
+}
+function buildCleanBatText(){
+  const proto=document.getElementById('pullProto').value;
+  if(proto!=='ftp')return null;
+  const u=pullNormUrl()||'ftp://192.168.1.5:2121/';
+  const target=(document.getElementById('pullTarget').value||'D:\\AndroidBackup').trim();
+  const anon=document.getElementById('pullAnon').checked;
+  const ftpUser=anon?'':(document.getElementById('pullUser').value||'').trim();
+  const ftpPass=anon?'':(document.getElementById('pullPass').value||'');
+  const filterRaw=(document.getElementById('pullFilter').value||'').trim();
+  const filters=filterRaw?filterRaw.split(',').map(x=>x.trim()).filter(Boolean):[];
+  const filterPs=filters.length?'@("'+filters.join('", "')+'")':'@()';
+  const askDir=document.getElementById('pullAskDir').checked;
+
+  const lines=[
+'@echo off',
+'REM ==== CleanHP.bat (FTP) - hapus file HP yang SUDAH terverifikasi ada di backup ====',
+'set "SYNCHP_SELF=%~f0"',
+'powershell -NoProfile -ExecutionPolicy Bypass -Command "$f=Get-Content -Raw -LiteralPath $env:SYNCHP_SELF -Encoding UTF8; $i=$f.IndexOf(\'#PS\'+\'BEGIN\'); $b=$f.Substring($i); $p=Join-Path $env:TEMP \'CleanHP_run.ps1\'; [IO.File]::WriteAllText($p,$b,[Text.UTF8Encoding]::new($true)); $tk=$null;$er=$null; [System.Management.Automation.Language.Parser]::ParseInput($b,[ref]$tk,[ref]$er)|Out-Null; if($er){Write-Host \'=== SYNTAX ERROR ===\' -ForegroundColor Red; $er|ForEach-Object{Write-Host (\'Baris \'+$_.Extent.StartLineNumber+\': \'+$_.Message) -ForegroundColor Red}; Read-Host \'Enter untuk keluar\'}else{& $p}"',
+'if errorlevel 1 pause',
+'exit /b',
+'#PSBEGIN',
+'$ServerUrl="'+u+'"',
+'$BackupDir="'+target+'"',
+'$OnlyFolders='+filterPs,
+'$FtpUser="'+ftpUser.replace(/"/g,'')+'"',
+'$FtpPass="'+ftpPass.replace(/"/g,'')+'"',
+'$ErrorActionPreference="Continue"'
+  ];
+  if(askDir){
+    lines.push(
+'Add-Type -AssemblyName System.Windows.Forms',
+'$dlg=New-Object System.Windows.Forms.FolderBrowserDialog',
+'$dlg.Description="Pilih folder BACKUP di PC (pembanding sebelum hapus di HP)"',
+'$dlg.SelectedPath=$BackupDir',
+'if($dlg.ShowDialog() -eq "OK"){$BackupDir=$dlg.SelectedPath}else{Write-Host "Dibatalkan." -ForegroundColor Yellow;exit}');
+  }
+  lines.push(
+'if(-not(Test-Path $BackupDir)){Write-Host "[ERROR] Folder backup tidak ditemukan: $BackupDir" -ForegroundColor Red;Read-Host "Enter";exit 1}',
+'$LogF=Join-Path $BackupDir "_synclog.txt"',
+'Set-Content $LogF "[CLEANHP MULAI] $(Get-Date -Format \'yyyy-MM-dd HH:mm:ss\') | $ServerUrl vs $BackupDir" -Encoding UTF8',
+'function FmtSz($b){if($b -lt 1KB){return "$b B"};if($b -lt 1MB){return "{0:N1} KB" -f ($b/1KB)};if($b -lt 1GB){return "{0:N1} MB" -f ($b/1MB)};return "{0:N2} GB" -f ($b/1GB)}',
+'function WLog($m,$c){Write-Host $m -ForegroundColor $c; Add-Content $LogF $m -Encoding UTF8}',
+'function FtpReq($u,$method){',
+'  $rq=[System.Net.FtpWebRequest]::Create($u)',
+'  $rq.Method=$method;$rq.UseBinary=$true;$rq.UsePassive=$true;$rq.KeepAlive=$false;$rq.Timeout=30000',
+'  if($FtpUser -ne ""){$rq.Credentials=New-Object System.Net.NetworkCredential($FtpUser,$FtpPass)}',
+'  else{$rq.Credentials=New-Object System.Net.NetworkCredential("anonymous","anon@")}',
+'  return $rq}',
+'function GetListing($u){',
+'  try{',
+'    $rq=FtpReq $u ([System.Net.WebRequestMethods+Ftp]::ListDirectoryDetails)',
+'    $rs=$rq.GetResponse();$sr=New-Object IO.StreamReader($rs.GetResponseStream())',
+'    $out=@()',
+'    while(-not $sr.EndOfStream){',
+'      $ln=$sr.ReadLine();if(-not $ln){continue}',
+'      $isDir=$false;$name=$null;$sz=-1',
+'      if($ln -match "^([dl\\-])([rwxsStT\\-]{9})\\s+\\d+\\s+\\S+\\s+\\S+\\s+(\\d+)\\s+\\S+\\s+\\S+\\s+\\S+\\s+(.+)$"){',
+'        $isDir=($Matches[1] -eq "d");$sz=[long]$Matches[3];$name=$Matches[4]}',
+'      elseif($ln -match "<DIR>\\s+(.+)$"){$isDir=$true;$name=$Matches[1]}',
+'      elseif($ln -match "^\\d{2}-\\d{2}-\\d{2}\\s+\\S+\\s+(\\d+)\\s+(.+)$"){$isDir=$false;$sz=[long]$Matches[1];$name=$Matches[2]}',
+'      if($name -and $name -ne "." -and $name -ne ".."){$out+=@{n=$name.Trim();d=$isDir;s=$sz}}',
+'    }',
+'    $sr.Close();$rs.Close();return $out',
+'  }catch{WLog "  [GAGAL LIST] $u : $($_.Exception.Message)" Red;return @()}}',
+'function FtpSize($u){try{$rq=FtpReq $u ([System.Net.WebRequestMethods+Ftp]::GetFileSize);$rs=$rq.GetResponse();$sz=$rs.ContentLength;$rs.Close();return $sz}catch{return -1}}',
+'function FtpDel($u){$rq=FtpReq $u ([System.Net.WebRequestMethods+Ftp]::DeleteFile);$rq.GetResponse().Close()}',
+'$script:Cand=New-Object System.Collections.ArrayList',
+'$script:NoBak=0;$script:Diff=0',
+'function ScanPhone($u,$lp,$rp){',
+'  foreach($e in (GetListing $u)){',
+'    $n=$e.n',
+'    $iu=$u.TrimEnd("/")+"/"+[System.Uri]::EscapeDataString($n)',
+'    if($e.d){',
+'      if($rp -eq "" -and $OnlyFolders.Count -gt 0 -and ($OnlyFolders -notcontains $n)){continue}',
+'      ScanPhone ($iu+"/") (Join-Path $lp $n) "$rp/$n"}',
+'    else{',
+'      if($n -eq "_synclog.txt"){continue}',
+'      $lf=Join-Path $lp $n;$ds="$rp/$n".TrimStart("/")',
+'      if(-not(Test-Path $lf)){$script:NoBak++;Write-Host "  ? Belum dibackup (AMAN, tidak dihapus): $ds" -ForegroundColor Yellow;continue}',
+'      $localSz=(Get-Item $lf).Length',
+'      $remoteSz=$e.s',
+'      if($remoteSz -lt 0){$remoteSz=FtpSize $iu}',
+'      if($remoteSz -lt 0){$script:Diff++;Write-Host "  ? Ukuran tak terbaca (tidak dihapus): $ds" -ForegroundColor Yellow;continue}',
+'      if($remoteSz -ne $localSz){$script:Diff++;Write-Host "  ! Ukuran BEDA (tidak dihapus): $ds (HP $(FmtSz $remoteSz) vs PC $(FmtSz $localSz))" -ForegroundColor Yellow;continue}',
+'      [void]$script:Cand.Add(@{url=$iu;path=$ds;size=$remoteSz})',
+'      Write-Host "  = Terverifikasi sama: $ds ($(FmtSz $remoteSz))" -ForegroundColor DarkGray',
+'    }}}',
+'Write-Host "=== CLEANHP: VERIFIKASI BACKUP SEBELUM HAPUS ===" -ForegroundColor Cyan',
+'Write-Host "HP (FTP) : $ServerUrl" -ForegroundColor Cyan',
+'Write-Host "Backup PC: $BackupDir" -ForegroundColor Cyan',
+'try{$t=FtpReq $ServerUrl ([System.Net.WebRequestMethods+Ftp]::ListDirectory);$t.GetResponse().Close();WLog "[OK] FTP terjangkau" Green}catch{WLog "[ERROR] Tidak bisa konek FTP: $($_.Exception.Message)" Red;Read-Host "Enter";exit 1}',
+'Write-Host "Memindai dan membandingkan... (tahap ini TIDAK menghapus apapun)" -ForegroundColor Cyan',
+'ScanPhone $ServerUrl $BackupDir ""',
+'$totSz=0;$script:Cand|ForEach-Object{$totSz+=$_.size}',
+'WLog "" Gray',
+'WLog "=== HASIL VERIFIKASI ===" Cyan',
+'WLog ("Terverifikasi sama (bisa dihapus dari HP): "+$script:Cand.Count+" file, total "+(FmtSz $totSz)) Green',
+'WLog ("Belum ada di backup (TIDAK disentuh)     : "+$script:NoBak+" file") Yellow',
+'WLog ("Ukuran beda / tak terverifikasi (AMAN)   : "+$script:Diff+" file") Yellow',
+'if($script:Cand.Count -eq 0){WLog "Tidak ada yang bisa dihapus. Selesai." Cyan;Read-Host "Enter untuk keluar";exit}',
+'Write-Host ""',
+'Write-Host ("Kandidat hapus: "+$script:Cand.Count+" file, total "+(FmtSz $totSz)+" (semuanya terverifikasi identik di backup)") -ForegroundColor Cyan',
+'Write-Host ""',
+'Write-Host "Pilih mode:" -ForegroundColor Cyan',
+'Write-Host "  [1] Hapus SEMUA kandidat di atas"',
+'Write-Host "  [2] Pilih per-FOLDER via tabel (hapus seluruh isi folder terpilih)"',
+'Write-Host "  [3] Pilih per-FILE via tabel (Ctrl+klik multi-pilih, ada kolom filter)"',
+'Write-Host "  [Enter] Batal, tidak hapus apapun"',
+'$mode=Read-Host "Pilihan (1/2/3)"',
+'if($mode -eq "2"){',
+'  $grp=$script:Cand|Group-Object {if($_.path.Contains("/")){$_.path.Substring(0,$_.path.LastIndexOf("/"))}else{"(root)"}}',
+'  $fview=$grp|ForEach-Object{$gs=0;$_.Group|ForEach-Object{$gs+=$_.size};[PSCustomObject]@{Folder=$_.Name;JumlahFile=$_.Count;TotalUkuran=FmtSz $gs;_key=$_.Name}}|Sort-Object Folder',
+'  $fsel=$fview|Out-GridView -Title "Pilih FOLDER yang seluruh isinya (yang terverifikasi) akan DIHAPUS dari HP - Ctrl+klik untuk multi-pilih, lalu OK" -PassThru',
+'  if(-not $fsel){WLog "[BATAL] Tidak ada folder dipilih." Yellow;Read-Host "Enter untuk keluar";exit}',
+'  $keys=@($fsel|ForEach-Object{$_._key})',
+'  $newCand=New-Object System.Collections.ArrayList',
+'  foreach($it in $script:Cand){',
+'    $fkey=if($it.path.Contains("/")){$it.path.Substring(0,$it.path.LastIndexOf("/"))}else{"(root)"}',
+'    if($keys -contains $fkey){[void]$newCand.Add($it)}}',
+'  $script:Cand=$newCand',
+'  $totSz=0;$script:Cand|ForEach-Object{$totSz+=$_.size}',
+'  WLog ("Dipilih "+$keys.Count+" folder -> "+$script:Cand.Count+" file") Cyan',
+'}elseif($mode -eq "3"){',
+'  $view=$script:Cand|ForEach-Object{[PSCustomObject]@{Folder=$(if($_.path.Contains("/")){$_.path.Substring(0,$_.path.LastIndexOf("/"))}else{"(root)"});File=$_.path.Split("/")[-1];Ukuran=FmtSz $_.size;Path=$_.path;_url=$_.url;_size=$_.size}}',
+'  $sel=$view|Out-GridView -Title "Pilih file yang akan DIHAPUS dari HP (Ctrl+klik = multi, ketik di Filter untuk cari/saring folder) lalu klik OK" -PassThru',
+'  if(-not $sel){WLog "[BATAL] Tidak ada yang dipilih." Yellow;Read-Host "Enter untuk keluar";exit}',
+'  $script:Cand=New-Object System.Collections.ArrayList',
+'  foreach($s in $sel){[void]$script:Cand.Add(@{url=$s._url;path=$s.Path;size=$s._size})}',
+'  $totSz=0;$script:Cand|ForEach-Object{$totSz+=$_.size}',
+'}elseif($mode -ne "1"){WLog "[BATAL] Tidak ada file yang dihapus." Yellow;Read-Host "Enter untuk keluar";exit}',
+'Write-Host ""',
+'Write-Host ("PERHATIAN: "+$script:Cand.Count+" file akan DIHAPUS PERMANEN dari HP, membebaskan "+(FmtSz $totSz)) -ForegroundColor Red',
+'$c=Read-Host "Ketik HAPUS (huruf besar) untuk melanjutkan, atau Enter untuk batal"',
+'if($c -cne "HAPUS"){WLog "[BATAL] Tidak ada file yang dihapus." Yellow;Read-Host "Enter untuk keluar";exit}',
+'$del=0;$fail=0;$freed=0',
+'foreach($it in $script:Cand){',
+'  try{FtpDel $it.url;$del++;$freed+=$it.size;WLog ("  X Dihapus dari HP: "+$it.path+" ("+(FmtSz $it.size)+")") Red}',
+'  catch{$fail++;WLog ("  ! Gagal hapus (server menolak / read-only?): "+$it.path) Yellow}}',
+'WLog "" Gray',
+'WLog ("[CLEANHP SELESAI] "+$del+" file dihapus dari HP | Ruang dibebaskan: "+(FmtSz $freed)+($(if($fail){" | "+$fail+" gagal (cek mode read-write FTP)"}else{""}))) Cyan',
+'Read-Host "Enter untuk keluar"'
+  );
+  return {text:lines.join('\r\n'),target};
+}
+async function pullGenClean(copyMode){
+  const r=buildCleanBatText();
+  if(!r){
+    pullStatusMsg('<strong>CleanHP hanya tersedia untuk protokol FTP.</strong> Pilih FTP di wizard (penghapusan butuh perintah FTP DELE; HTTP File Server tidak punya cara standar untuk hapus). Pastikan juga FTP Xiaomi diset <strong>read-write</strong>, bukan read-only.','err');
+    return;
+  }
+  if(copyMode){
+    try{
+      await navigator.clipboard.writeText(r.text);
+      pullStatusMsg('<strong>CleanHP tersalin ke clipboard.</strong> Paste di Notepad → Save As <code>"CleanHP.bat"</code> (All Files, UTF-8) → jalankan. Ingat: hanya menghapus file HP yang terverifikasi identik di backup, selalu dengan preview + konfirmasi ketik HAPUS.','ok');
+    }catch(e){pullStatusMsg('Gagal menyalin: '+e.message,'err');}
+  }else{
+    const blob=new Blob([r.text],{type:'text/plain;charset=utf-8'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='CleanHP.bat';
+    a.click();
+    pullStatusMsg('<strong>CleanHP.bat terdownload.</strong> Pastikan FTP Xiaomi mode <strong>read-write</strong>. Alur: scan & bandingkan (tanpa hapus) → ringkasan jumlah file & ruang yang bisa dibebaskan → konfirmasi ketik <code>HAPUS</code> → baru eksekusi. File yang belum dibackup atau beda ukuran tidak akan pernah disentuh.','ok');
   }
 }
 /* ---- Monitor live: baca _synclog.txt dari folder tujuan tiap detik ---- */
